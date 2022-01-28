@@ -135,6 +135,8 @@ class ModelBasedSearcher(SearcherWithRandomSeed):
         self._random_searcher = None
         # Tracks the cumulative time spent in `get_config` calls
         self.cumulative_get_config_time = 0
+        # Tracks when get_config switches from random to BO
+        self._random_to_bo_status = 0
         if model_factory.debug_log is not None:
             deb_msg = "[ModelBasedSearcher.__init__]\n"
             deb_msg += ("- acquisition_class = {}\n".format(acquisition_class))
@@ -251,7 +253,6 @@ class ModelBasedSearcher(SearcherWithRandomSeed):
 
         """
         self._assign_random_searcher()
-        state = self.state_transformer.state
         config = self._next_initial_config()  # Ask for initial config
         if config is None:
             pick_random = self._should_pick_random_config(exclusion_candidates)
@@ -273,7 +274,7 @@ class ModelBasedSearcher(SearcherWithRandomSeed):
                 self.profiler.stop('random')
         return config, pick_random
 
-    def get_config(self, **kwargs) -> Configuration:
+    def _get_config(self, **kwargs) -> Configuration:
         """
         Runs Bayesian optimization in order to suggest the next config to evaluate.
 
@@ -304,6 +305,8 @@ class ModelBasedSearcher(SearcherWithRandomSeed):
         if not pick_random:
             # Model-based decision
             if not exclusion_candidates.config_space_exhausted():
+                if self._random_to_bo_status == 0:
+                    self._random_to_bo_status = 1
                 config = self._get_config_modelbased(
                     exclusion_candidates, **kwargs)
 
@@ -373,6 +376,13 @@ class ModelBasedSearcher(SearcherWithRandomSeed):
     @property
     def debug_log(self):
         return self._debug_log
+
+    def switched_random_to_bo(self) -> bool:
+        if self._random_to_bo_status == 1:
+            self._random_to_bo_status = 2
+            return True
+        else:
+            return False
 
     def _assign_random_searcher(self, random_seed=None):
         if self._random_searcher is None:
