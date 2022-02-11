@@ -13,7 +13,8 @@
 from syne_tune.search_space import choice, logfinrange, finrange
 
 from benchmarking.blackbox_repository.conversion_scripts.scripts.fcnet_import \
-    import METRIC_ELAPSED_TIME, METRIC_VALID_LOSS, RESOURCE_ATTR, BLACKBOX_NAME
+    import METRIC_ELAPSED_TIME, METRIC_VALID_LOSS, RESOURCE_ATTR, \
+    BLACKBOX_NAME, NUM_UNITS_1, NUM_UNITS_2
 
 
 # This configuration space allows to use the tabulated blackbox without any
@@ -28,8 +29,8 @@ _config_space = {
     "hp_dropout_2": finrange(0.0, 0.6, 3),
     "hp_init_lr": choice([0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]),
     'hp_lr_schedule': choice(["cosine", "const"]),
-    "hp_n_units_1": logfinrange(16, 512, 6, cast_int=True),
-    "hp_n_units_2": logfinrange(16, 512, 6, cast_int=True),
+    NUM_UNITS_1: logfinrange(16, 512, 6, cast_int=True),
+    NUM_UNITS_2: logfinrange(16, 512, 6, cast_int=True),
 }
 
 
@@ -64,8 +65,40 @@ def nashpobench_benchmark(params):
         'elapsed_time_attr': METRIC_ELAPSED_TIME,
         'max_resource_attr': 'epochs',
         'config_space': config_space,
-        'cost_model': None,
+        'cost_model': get_cost_model(params),
         'supports_simulated': True,
         'blackbox_name': BLACKBOX_NAME,
         'time_this_resource_attr': METRIC_ELAPSED_TIME,
     }
+
+
+# See Table 1 in https://arxiv.org/abs/1905.04970
+_NUM_FEATURES = {
+    'protein_structure': 9,
+    'naval_propulsion': 15,
+    'parkinsons_telemonitoring': 20,
+    'slice_localization': 385,
+}
+
+
+def get_cost_model(params):
+    """
+    This cost model ignores the batch size, but depends on the number of units
+    in the two layers only.
+    """
+    try:
+        from syne_tune.optimizer.schedulers.searchers.bayesopt.models.cost.linear_cost_model \
+            import FixedLayersMLPCostModel
+
+        num_inputs = _NUM_FEATURES[params['dataset_name']]
+        num_outputs = 1  # All benchmarks are regression problems
+        num_units_keys = [NUM_UNITS_1, NUM_UNITS_2]
+        expected_hidden_layer_width, exp_vals = \
+            FixedLayersMLPCostModel.get_expected_hidden_layer_width(
+                _config_space, num_units_keys)
+        return FixedLayersMLPCostModel(
+            num_inputs=num_inputs, num_outputs=num_outputs,
+            num_units_keys=num_units_keys,
+            expected_hidden_layer_width=expected_hidden_layer_width)
+    except Exception:
+        return None
