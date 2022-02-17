@@ -11,10 +11,9 @@ import numpy as np
 from examples.launch_height_standalone_scheduler import SimpleScheduler
 from syne_tune.backend.trial_status import Trial
 from syne_tune.optimizer.baselines import RandomSearch, BayesianOptimization, \
-    ASHA, MOBSTER, REA, SyncHyperband, SyncBOHB, SyncMOBSTER
+    ASHA, MOBSTER, REA, SyncHyperband, SyncBOHB, SyncMOBSTER, MSRRandom
 from syne_tune.optimizer.scheduler import SchedulerDecision
 from syne_tune.optimizer.schedulers.fifo import FIFOScheduler
-from syne_tune.optimizer.schedulers.median_stopping_rule import MedianStoppingRule
 from syne_tune.optimizer.schedulers.hyperband import HyperbandScheduler
 from syne_tune.optimizer.schedulers.multiobjective.moasha import MOASHA
 from syne_tune.optimizer.schedulers.pbt import PopulationBasedTraining
@@ -95,10 +94,7 @@ def make_transfer_learning_evaluations(num_evals: int = 10):
     # TODO fix me, assert is thrown refusing to take PASHA arguments as valid
     # PASHA(config_space=config_space, metric=metric1, resource_attr=resource_attr, max_t=max_t),
     MOASHA(config_space=config_space, time_attr=resource_attr, metrics=[metric1, metric2]),
-    MedianStoppingRule(
-        scheduler=FIFOScheduler(config_space, searcher='random', metric=metric1),
-        resource_attr=resource_attr, metric=metric1
-    ),
+    MSRRandom(config_space, metric=metric1, resource_attr=resource_attr),
     BoundingBox(
         scheduler_fun=lambda new_config_space, mode, metric: RandomSearch(
             new_config_space,
