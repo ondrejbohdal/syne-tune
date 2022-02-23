@@ -10,7 +10,9 @@
 # on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
+from typing import Dict, Optional
 import autograd.numpy as anp
+from numpy.random import RandomState
 
 from syne_tune.optimizer.schedulers.searchers.bayesopt.gpautograd.constants \
     import INITIAL_NOISE_VARIANCE, NOISE_VARIANCE_LOWER_BOUND, \
@@ -28,6 +30,8 @@ from syne_tune.optimizer.schedulers.searchers.bayesopt.gpautograd.mean \
     import ScalarMeanFunction, MeanFunction
 from syne_tune.optimizer.schedulers.searchers.bayesopt.gpautograd.posterior_state \
     import GaussProcPosteriorState
+from syne_tune.optimizer.schedulers.utils.simple_profiler \
+    import SimpleProfiler
 
 
 class MarginalLikelihood(Block):
@@ -85,14 +89,29 @@ class MarginalLikelihood(Block):
         else:
             return 1.0
 
-    def get_posterior_state(self, features, targets):
+    def _assert_data_entries(self, data: Dict):
+        features = data.get('features')
+        targets = data.get('targets')
+        assert features is not None and targets is not None, \
+            "data must contain 'features' and 'targets'"
+        assert features.ndim == 2, \
+            f"features.shape = {features.shape}, must be matrix"
+        if targets.ndim == 1:
+            targets = targets.reshape((-1, 1))
+            data['targets'] = targets
+        assert features.shape[0] == targets.shape[0], \
+            f"features and targets should have the same number of points " +\
+            f"(received {features.shape[0]} and {targets.shape[0]})"
+
+    def get_posterior_state(self, data: Dict):
+        self._assert_data_entries(data)
         if self.encoding_covscale is not None:
             kernel = (self.kernel, self._covariance_scale())
         else:
             kernel = self.kernel
         return GaussProcPosteriorState(
-            features=features,
-            targets=targets,
+            features=data['features'],
+            targets=data['targets'],
             mean=self.mean,
             kernel=kernel,
             noise_variance=self._noise_variance())
@@ -168,3 +187,33 @@ class MarginalLikelihood(Block):
         self.set_noise_variance(param_dict['noise_variance'])
         if self.encoding_covscale is not None:
             self.set_covariance_scale(param_dict['covariance_scale'])
+
+    def reset_params(self, random_state: RandomState):
+        """
+        Reset hyperparameters to their initial values (or resample them).
+        """
+        # Note: The `init` parameter is a default sampler which is used only
+        # for parameters which do not have initializers specified. Right now,
+        # all our parameters have such initializers (constant in general),
+        # so this is just to be safe (if `init` is not specified here, it
+        # defaults to `np.random.uniform`, whose seed we do not control).
+        self.initialize(init=random_state.uniform, force_reinit=True)
+
+    def data_precomputations(self, data: Dict, overwrite: bool = False):
+        pass
+
+    def on_fit_start(
+            self, data: Dict, profiler: Optional[SimpleProfiler] = None):
+        """
+        Called at the beginning of `fit`.
+
+        :param data: Argument passed to `fit`
+        :param profiler: Argument passed to `fit`
+
+        """
+        self._assert_data_entries(data)
+        targets = data['targets']
+        assert targets.shape[1] == 1, \
+            "targets cannot be a matrix if parameters are to be fit"
+        if isinstance(self.mean, ScalarMeanFunction):
+            self.mean.set_mean_value(anp.mean(targets))

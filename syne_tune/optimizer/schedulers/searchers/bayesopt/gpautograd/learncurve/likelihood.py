@@ -12,6 +12,7 @@
 # permissions and limitations under the License.
 from typing import Union, Optional, Dict
 import autograd.numpy as anp
+from numpy.random import RandomState
 
 from syne_tune.optimizer.schedulers.searchers.bayesopt.gpautograd.learncurve.model_params \
     import ISSModelParameters
@@ -54,11 +55,14 @@ class MarginalLikelihood(Block):
     :param mean: Mean function mu(x)
     :param initial_noise_variance: A scalar to initialize the value of the
         residual noise variance
+    :param use_precomputations: If False, we use variants without
+        precomputation (TODO: Still needed?)
     """
     def __init__(
             self, kernel: KernelFunction, res_model: LCModel,
             mean: MeanFunction = None, initial_noise_variance=None,
-            encoding_type=None, **kwargs):
+            encoding_type=None,
+            use_precomputations: bool = True, **kwargs):
         super(MarginalLikelihood, self).__init__(**kwargs)
         assert isinstance(res_model, (ISSModelParameters,
                                       ExponentialDecayBaseKernelFunction)), \
@@ -75,6 +79,7 @@ class MarginalLikelihood(Block):
         self.mean = mean
         self.kernel = kernel
         self.res_model = res_model
+        self._use_precomputations = use_precomputations
         if isinstance(res_model, ISSModelParameters):
             tag = 'issm_'
             self._type = GaussProcISSMPosteriorState
@@ -167,10 +172,41 @@ class MarginalLikelihood(Block):
             func.set_params(stripped_dict)
         self.set_noise_variance(param_dict['noise_variance'])
 
-    def data_precomputations(self, data: Dict):
+    def reset_params(self, random_state: RandomState):
+        """
+        Reset hyperparameters to their initial values (or resample them).
+        """
+        # Note: The `init` parameter is a default sampler which is used only
+        # for parameters which do not have initializers specified. Right now,
+        # all our parameters have such initializers (constant in general),
+        # so this is just to be safe (if `init` is not specified here, it
+        # defaults to `np.random.uniform`, whose seed we do not control).
+        self.initialize(init=random_state.uniform, force_reinit=True)
+
+    def data_precomputations(self, data: Dict, overwrite: bool = False):
         """
         For some `res_model` types, precomputations on top of `data` are
         needed. This is done here, and the precomputed variables are appended
         to `data` as extra entries.
+        Precomputations are done only if not already included in `data`,
+        unless `overwrite` is True.
         """
-        self._type.data_precomputations(data)
+        if self._use_precomputations and (
+                overwrite or not self._type.has_precomputations(data)):
+            self._type.data_precomputations(data)
+
+    def on_fit_start(
+            self, data: Dict, profiler: Optional[SimpleProfiler] = None):
+        """
+        Called at the beginning of `fit`.
+
+        :param data: Argument passed to `fit`
+        :param profiler: Argument passed to `fit`
+
+        """
+        assert not data['do_fantasizing'], \
+            "data must not be for fantasizing. Call prepare_data with " +\
+            "do_fantasizing=False"
+        self.data_precomputations(data)
+        if profiler is not None:
+            self.set_noise_variance(profiler)

@@ -196,7 +196,8 @@ class GaussProcAdditivePosteriorState(object):
             data=data, poster_state=self.poster_state, num_samples=num_samples,
             random_state=random_state)
 
-    def has_precomputations(self, data: Dict) -> bool:
+    @staticmethod
+    def has_precomputations(data: Dict) -> bool:
         raise NotImplementedError()
 
 
@@ -361,7 +362,8 @@ class GaussProcISSMPosteriorState(IncrementalUpdateGPAdditivePosteriorState):
         super().__init__(
             data, mean, kernel, noise_variance=noise_variance, **kwargs)
 
-    def has_precomputations(self, data: Dict) -> bool:
+    @staticmethod
+    def has_precomputations(data: Dict) -> bool:
         return all(k in data for k in ('ydims', 'num_configs', 'deltay', 'logr'))
 
     def _compute_posterior_state(
@@ -494,7 +496,8 @@ class GaussProcExpDecayPosteriorState(IncrementalUpdateGPAdditivePosteriorState)
         assert self.r_min == res_kernel.r_min and self.r_max == res_kernel.r_max, \
             ((self.r_min, self.r_max), (res_kernel.r_min, res_kernel.r_max))
 
-    def has_precomputations(self, data: Dict) -> bool:
+    @staticmethod
+    def has_precomputations(data: Dict) -> bool:
         return all(k in data for k in ('ydims', 'num_configs', 'yflat'))
 
     def _compute_posterior_state(
